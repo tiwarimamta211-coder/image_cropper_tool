@@ -1,0 +1,371 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+#app{padding:1rem 0;max-width:100%}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.toolbar label{font-size:13px;color:var(--color-text-secondary)}
+.toolbar select,.toolbar input[type=number]{height:32px;font-size:13px;padding:0 8px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);width:90px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0 12px;height:32px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-size:13px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--color-background-secondary)}
+.btn.primary{background:var(--color-text-primary);color:var(--color-background-primary);border-color:var(--color-text-primary)}
+.btn.primary:hover{opacity:0.85}
+.btn:disabled{opacity:0.4;cursor:default}
+.workspace{position:relative;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);min-height:340px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#drop-zone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:pointer}
+#drop-zone i{font-size:40px;color:var(--color-text-tertiary)}
+#drop-zone p{font-size:14px;color:var(--color-text-secondary)}
+#drop-zone small{font-size:12px;color:var(--color-text-tertiary)}
+#canvas-wrap{display:none;position:relative;cursor:crosshair}
+canvas#img-canvas{display:block;max-width:100%;border-radius:4px}
+#crop-box{position:absolute;border:2px solid #5B9BD5;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);cursor:move;display:none}
+.handle{position:absolute;width:10px;height:10px;background:#fff;border:1.5px solid #5B9BD5;border-radius:2px}
+.handle.nw{top:-5px;left:-5px;cursor:nw-resize}
+.handle.n{top:-5px;left:50%;transform:translateX(-50%);cursor:n-resize}
+.handle.ne{top:-5px;right:-5px;cursor:ne-resize}
+.handle.e{top:50%;right:-5px;transform:translateY(-50%);cursor:e-resize}
+.handle.se{bottom:-5px;right:-5px;cursor:se-resize}
+.handle.s{bottom:-5px;left:50%;transform:translateX(-50%);cursor:s-resize}
+.handle.sw{bottom:-5px;left:-5px;cursor:sw-resize}
+.handle.w{top:50%;left:-5px;transform:translateY(-50%);cursor:w-resize}
+.info-bar{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:12px;color:var(--color-text-secondary)}
+.info-bar span b{color:var(--color-text-primary);font-weight:500}
+#preview-section{display:none;margin-top:16px}
+#preview-section h3{font-size:14px;font-weight:500;margin-bottom:8px;color:var(--color-text-secondary)}
+#preview-canvas{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);max-width:100%;max-height:200px;display:block}
+.sep{width:1px;height:24px;background:var(--color-border-tertiary);margin:0 4px}
+#rotation-val{min-width:32px;text-align:right;font-size:13px;color:var(--color-text-secondary)}
+</style>
+
+<h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Image Cropper Tool — upload an image, draw a crop region, and download the result</h2>
+
+<div id="app">
+  <div class="toolbar">
+    <button class="btn" id="upload-btn"><i class="ti ti-upload" aria-hidden="true"></i>Upload</button>
+    <input type="file" id="file-input" accept="image/*" style="display:none">
+    <div class="sep"></div>
+    <label>Aspect</label>
+    <select id="aspect">
+      <option value="free">Free</option>
+      <option value="1">1:1</option>
+      <option value="1.3333">4:3</option>
+      <option value="1.7778">16:9</option>
+      <option value="0.75">3:4</option>
+      <option value="0.5625">9:16</option>
+    </select>
+    <div class="sep"></div>
+    <label>W</label>
+    <input type="number" id="in-w" placeholder="px" min="1">
+    <label>H</label>
+    <input type="number" id="in-h" placeholder="px" min="1">
+    <div class="sep"></div>
+    <label>Rotate</label>
+    <input type="range" id="rotation" min="-180" max="180" value="0" step="1" style="width:80px">
+    <span id="rotation-val">0°</span>
+    <div class="sep"></div>
+    <button class="btn" id="flip-h-btn" title="Flip horizontal"><i class="ti ti-flip-horizontal" aria-hidden="true"></i></button>
+    <button class="btn" id="flip-v-btn" title="Flip vertical"><i class="ti ti-flip-vertical" aria-hidden="true"></i></button>
+    <div class="sep"></div>
+    <button class="btn" id="reset-btn"><i class="ti ti-refresh" aria-hidden="true"></i>Reset</button>
+    <button class="btn primary" id="crop-btn" disabled><i class="ti ti-crop" aria-hidden="true"></i>Crop</button>
+    <button class="btn" id="download-btn" disabled><i class="ti ti-download" aria-hidden="true"></i>Download</button>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <div id="drop-zone">
+      <i class="ti ti-photo" aria-hidden="true"></i>
+      <p>Drop image here or click Upload</p>
+      <small>PNG, JPG, GIF, WebP supported</small>
+    </div>
+    <div id="canvas-wrap">
+      <canvas id="img-canvas"></canvas>
+      <div id="crop-box">
+        <div class="handle nw" data-dir="nw"></div>
+        <div class="handle n"  data-dir="n"></div>
+        <div class="handle ne" data-dir="ne"></div>
+        <div class="handle e"  data-dir="e"></div>
+        <div class="handle se" data-dir="se"></div>
+        <div class="handle s"  data-dir="s"></div>
+        <div class="handle sw" data-dir="sw"></div>
+        <div class="handle w"  data-dir="w"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-bar" id="info-bar" style="display:none">
+    <span>Canvas: <b id="info-canvas">—</b></span>
+    <span>Crop: <b id="info-crop">—</b></span>
+    <span>Output: <b id="info-output">—</b></span>
+    <span>Zoom: <b id="info-zoom">100%</b></span>
+  </div>
+
+  <div id="preview-section">
+    <h3>Preview</h3>
+    <canvas id="preview-canvas"></canvas>
+  </div>
+</div>
+
+<script>
+const uploadBtn=document.getElementById('upload-btn');
+const fileInput=document.getElementById('file-input');
+const dropZone=document.getElementById('drop-zone');
+const canvasWrap=document.getElementById('canvas-wrap');
+const imgCanvas=document.getElementById('img-canvas');
+const cropBox=document.getElementById('crop-box');
+const workspace=document.getElementById('workspace');
+const aspectSel=document.getElementById('aspect');
+const inW=document.getElementById('in-w');
+const inH=document.getElementById('in-h');
+const rotSlider=document.getElementById('rotation');
+const rotVal=document.getElementById('rotation-val');
+const cropBtn=document.getElementById('crop-btn');
+const downloadBtn=document.getElementById('download-btn');
+const resetBtn=document.getElementById('reset-btn');
+const flipHBtn=document.getElementById('flip-h-btn');
+const flipVBtn=document.getElementById('flip-v-btn');
+const previewSection=document.getElementById('preview-section');
+const previewCanvas=document.getElementById('preview-canvas');
+const infoBar=document.getElementById('info-bar');
+const infoCanvas=document.getElementById('info-canvas');
+const infoCrop=document.getElementById('info-crop');
+const infoOutput=document.getElementById('info-output');
+const infoZoom=document.getElementById('info-zoom');
+
+const ctx=imgCanvas.getContext('2d');
+let origImg=null,displayScale=1,rotation=0,flipH=false,flipV=false;
+let crop={x:0,y:0,w:0,h:0};
+let dragging=null,dragStart={},cropStart={};
+let croppedDataURL=null;
+
+uploadBtn.onclick=()=>fileInput.click();
+fileInput.onchange=e=>loadFile(e.target.files[0]);
+
+workspace.addEventListener('dragover',e=>{e.preventDefault();workspace.style.outline='2px dashed #5B9BD5';});
+workspace.addEventListener('dragleave',()=>workspace.style.outline='');
+workspace.addEventListener('drop',e=>{e.preventDefault();workspace.style.outline='';loadFile(e.dataTransfer.files[0]);});
+dropZone.onclick=()=>fileInput.click();
+
+function loadFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{origImg=img;rotation=0;flipH=false;flipV=false;rotSlider.value=0;rotVal.textContent='0°';croppedDataURL=null;downloadBtn.disabled=true;previewSection.style.display='none';drawImage();showCropBox();};
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function getDisplaySize(){
+  const maxW=workspace.clientWidth-2,maxH=500;
+  let w=origImg.naturalWidth,h=origImg.naturalHeight;
+  const rad=rotation*Math.PI/180;
+  const cos=Math.abs(Math.cos(rad)),sin=Math.abs(Math.sin(rad));
+  const rotW=w*cos+h*sin,rotH=w*sin+h*cos;
+  const scale=Math.min(1,maxW/rotW,maxH/rotH);
+  displayScale=scale;
+  return{w:Math.round(rotW*scale),h:Math.round(rotH*scale)};
+}
+
+function drawImage(){
+  if(!origImg)return;
+  const {w,h}=getDisplaySize();
+  imgCanvas.width=w;imgCanvas.height=h;
+  ctx.save();ctx.clearRect(0,0,w,h);
+  ctx.translate(w/2,h/2);
+  ctx.rotate(rotation*Math.PI/180);
+  ctx.scale(flipH?-1:1,flipV?-1:1);
+  ctx.drawImage(origImg,-origImg.naturalWidth*displayScale/2,-origImg.naturalHeight*displayScale/2,origImg.naturalWidth*displayScale,origImg.naturalHeight*displayScale);
+  ctx.restore();
+  dropZone.style.display='none';canvasWrap.style.display='block';
+  infoCanvas.textContent=`${origImg.naturalWidth}×${origImg.naturalHeight}`;
+  infoZoom.textContent=Math.round(displayScale*100)+'%';
+  infoBar.style.display='flex';
+  updatePreview();
+}
+
+function showCropBox(){
+  const cw=imgCanvas.width,ch=imgCanvas.height;
+  const pad=Math.round(Math.min(cw,ch)*0.1);
+  crop={x:pad,y:pad,w:cw-pad*2,h:ch-pad*2};
+  applyCropBox();
+  cropBox.style.display='block';
+  cropBtn.disabled=false;
+}
+
+function applyCropBox(){
+  crop.x=Math.max(0,Math.min(crop.x,imgCanvas.width-1));
+  crop.y=Math.max(0,Math.min(crop.y,imgCanvas.height-1));
+  crop.w=Math.max(10,Math.min(crop.w,imgCanvas.width-crop.x));
+  crop.h=Math.max(10,Math.min(crop.h,imgCanvas.height-crop.y));
+  const rect=imgCanvas.getBoundingClientRect();
+  const wr=canvasWrap.getBoundingClientRect();
+  const ox=rect.left-wr.left,oy=rect.top-wr.top;
+  cropBox.style.left=(ox+crop.x)+'px';
+  cropBox.style.top=(oy+crop.y)+'px';
+  cropBox.style.width=crop.w+'px';
+  cropBox.style.height=crop.h+'px';
+  const realW=Math.round(crop.w/displayScale),realH=Math.round(crop.h/displayScale);
+  infoCrop.textContent=`${Math.round(crop.x/displayScale)},${Math.round(crop.y/displayScale)} — ${realW}×${realH}`;
+  infoOutput.textContent=`${realW}×${realH}`;
+  inW.value=realW;inH.value=realH;
+  updatePreview();
+}
+
+function updatePreview(){
+  if(!origImg||!crop.w||cropBox.style.display==='none')return;
+  const pc=previewCanvas;
+  const realX=Math.round(crop.x/displayScale),realY=Math.round(crop.y/displayScale);
+  const realW=Math.round(crop.w/displayScale),realH=Math.round(crop.h/displayScale);
+  const maxPrev=260;
+  const ps=Math.min(1,maxPrev/realW,maxPrev/realH);
+  pc.width=Math.round(realW*ps);pc.height=Math.round(realH*ps);
+  const pc2=pc.getContext('2d');
+  pc2.save();pc2.translate(pc.width/2,pc.height/2);
+  pc2.rotate(rotation*Math.PI/180);
+  pc2.scale(flipH?-1:1,flipV?-1:1);
+  const sx=realX-(origImg.naturalWidth/2),sy=realY-(origImg.naturalHeight/2);
+  pc2.drawImage(origImg,sx*ps,sy*ps,origImg.naturalWidth*ps,origImg.naturalHeight*ps);
+  pc2.restore();
+  previewSection.style.display='block';
+}
+
+cropBox.addEventListener('mousedown',startDrag);
+document.addEventListener('mousemove',onDrag);
+document.addEventListener('mouseup',endDrag);
+cropBox.addEventListener('touchstart',e=>startDrag(e.touches[0]),{passive:true});
+document.addEventListener('touchmove',e=>onDrag(e.touches[0]),{passive:true});
+document.addEventListener('touchend',endDrag);
+
+imgCanvas.addEventListener('mousedown',startNewCrop);
+imgCanvas.addEventListener('touchstart',e=>startNewCrop(e.touches[0]),{passive:true});
+
+function getCanvasPos(e){
+  const r=imgCanvas.getBoundingClientRect();
+  return{x:e.clientX-r.left,y:e.clientY-r.top};
+}
+
+function startNewCrop(e){
+  if(e.target!==imgCanvas)return;
+  const p=getCanvasPos(e);
+  dragging='new';dragStart={x:p.x,y:p.y};
+  crop={x:p.x,y:p.y,w:0,h:0};
+  cropBox.style.display='block';
+  cropBtn.disabled=false;
+}
+
+function startDrag(e){
+  const dir=e.target.dataset.dir;
+  dragStart={x:e.clientX,y:e.clientY};
+  cropStart={...crop};
+  dragging=dir||'move';
+  e.stopPropagation();
+}
+
+function onDrag(e){
+  if(!dragging)return;
+  const dx=e.clientX-dragStart.x,dy=e.clientY-dragStart.y;
+  const cw=imgCanvas.width,ch=imgCanvas.height;
+  if(dragging==='new'){
+    const p=getCanvasPos(e);
+    let x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y);
+    let w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);
+    const ar=aspectSel.value;
+    if(ar!=='free'){const a=parseFloat(ar);h=w/a;}
+    crop={x,y,w,h};
+  } else if(dragging==='move'){
+    crop.x=Math.max(0,Math.min(cw-cropStart.w,cropStart.x+dx));
+    crop.y=Math.max(0,Math.min(ch-cropStart.h,cropStart.y+dy));
+    crop.w=cropStart.w;crop.h=cropStart.h;
+  } else {
+    let{x,y,w,h}=cropStart;
+    const ar=aspectSel.value==='free'?null:parseFloat(aspectSel.value);
+    if(dragging.includes('e')){w=Math.max(10,cropStart.w+dx);}
+    if(dragging.includes('s')){h=Math.max(10,cropStart.h+dy);}
+    if(dragging.includes('w')){const nw=Math.max(10,cropStart.w-dx);x=cropStart.x+cropStart.w-nw;w=nw;}
+    if(dragging.includes('n')){const nh=Math.max(10,cropStart.h-dy);y=cropStart.y+cropStart.h-nh;h=nh;}
+    if(ar){if(dragging.includes('n')||dragging.includes('s')){w=h*ar;}else{h=w/ar;}}
+    crop={x,y,w,h};
+  }
+  applyCropBox();
+}
+
+function endDrag(){dragging=null;}
+
+aspectSel.onchange=()=>{
+  const ar=aspectSel.value;
+  if(ar!=='free'){
+    const a=parseFloat(ar);
+    crop.h=crop.w/a;
+    applyCropBox();
+  }
+};
+
+inW.onchange=()=>{
+  const v=parseInt(inW.value);if(!v)return;
+  const scaled=v*displayScale;
+  crop.w=scaled;
+  const ar=aspectSel.value;
+  if(ar!=='free'){crop.h=scaled/parseFloat(ar);}
+  applyCropBox();
+};
+inH.onchange=()=>{
+  const v=parseInt(inH.value);if(!v)return;
+  const scaled=v*displayScale;
+  crop.h=scaled;
+  const ar=aspectSel.value;
+  if(ar!=='free'){crop.w=scaled*parseFloat(ar);}
+  applyCropBox();
+};
+
+rotSlider.oninput=()=>{
+  rotation=parseInt(rotSlider.value);
+  rotVal.textContent=rotation+'°';
+  drawImage();applyCropBox();
+};
+
+flipHBtn.onclick=()=>{flipH=!flipH;drawImage();applyCropBox();};
+flipVBtn.onclick=()=>{flipV=!flipV;drawImage();applyCropBox();};
+
+resetBtn.onclick=()=>{
+  if(!origImg)return;
+  rotation=0;flipH=false;flipV=false;
+  rotSlider.value=0;rotVal.textContent='0°';
+  drawImage();showCropBox();
+  croppedDataURL=null;downloadBtn.disabled=true;
+  previewSection.style.display='none';
+};
+
+cropBtn.onclick=()=>{
+  if(!origImg)return;
+  const realX=Math.round(crop.x/displayScale);
+  const realY=Math.round(crop.y/displayScale);
+  const realW=Math.round(crop.w/displayScale);
+  const realH=Math.round(crop.h/displayScale);
+  const offscreen=document.createElement('canvas');
+  offscreen.width=realW;offscreen.height=realH;
+  const oc=offscreen.getContext('2d');
+  oc.save();
+  oc.translate(realW/2,realH/2);
+  oc.rotate(rotation*Math.PI/180);
+  oc.scale(flipH?-1:1,flipV?-1:1);
+  oc.drawImage(origImg,-(realX+realW/2),-(realY+realH/2),origImg.naturalWidth,origImg.naturalHeight);
+  oc.restore();
+  croppedDataURL=offscreen.toDataURL('image/png');
+  downloadBtn.disabled=false;
+  const pv=previewCanvas;
+  const ps=Math.min(1,260/realW,200/realH);
+  pv.width=Math.round(realW*ps);pv.height=Math.round(realH*ps);
+  const pvc=pv.getContext('2d');
+  pvc.drawImage(offscreen,0,0,pv.width,pv.height);
+  previewSection.style.display='block';
+};
+
+downloadBtn.onclick=()=>{
+  if(!croppedDataURL)return;
+  const a=document.createElement('a');
+  a.href=croppedDataURL;
+  a.download='cropped-image.png';
+  a.click();
+};
+</script>
